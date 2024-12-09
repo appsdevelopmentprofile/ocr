@@ -11,7 +11,7 @@ import streamlit_authenticator as stauth
 
 # --- Set page configuration ---
 st.set_page_config(
-    page_title="corsarious",
+    page_title="Corsarious",
     layout="wide",
     page_icon="🧑‍⚕️"
 )
@@ -20,15 +20,16 @@ st.set_page_config(
 names = ["corsarious"]
 usernames = ["corsarious"]
 
-# Load hashed passwords
+# Load hashed passwords or create a placeholder
 file_path = Path("hashed_pw.pkl")
-try:
+if not file_path.exists():
+    st.warning("Password file not found. Generating a placeholder hashed password.")
+    hashed_passwords = stauth.Hasher(["testpassword"]).generate()
+    with file_path.open("wb") as file:
+        pickle.dump(hashed_passwords, file)
+else:
     with file_path.open("rb") as file:
         hashed_passwords = pickle.load(file)
-except FileNotFoundError:
-    st.error("Password file not found.")
-except Exception as e:
-    st.error(f"An error occurred while loading passwords: {e}")
 
 authenticator = stauth.Authenticate(
     names, usernames, hashed_passwords, "corsarious", "corsarious", cookie_expiry_days=30
@@ -36,71 +37,56 @@ authenticator = stauth.Authenticate(
 
 name, authentication_status, username = authenticator.login("Login", "main")
 
-# If the user clicks "Logout", update session to reflect the logout
-if "logged_out" not in st.session_state:
-    st.session_state["logged_out"] = False  # Initial state for tracking logout
-
 if authentication_status == False:
     st.error("Username/password is incorrect")
-
 elif authentication_status == None:
     st.warning("Please enter your username and password")
-
 elif authentication_status:
-    # ---- LOGOUT AND GREETING ----
     authenticator.logout("Logout", "sidebar")
     st.sidebar.title(f"Welcome {name}")
     
-    # Sidebar
+    # Sidebar menu
     selected = st.sidebar.selectbox("Select Module", ["Doc Intelligence", "Field AI Assistant", "AI Testing"])
     
-    # Main Modules
     if selected == "Doc Intelligence":
-        # Initialize EasyOCR reader
-        reader = easyocr.Reader(['en'], verbose=True)
+        # EasyOCR Reader
+        reader = easyocr.Reader(['en'], verbose=False)
 
-        # Define the path to the YOLO model file (assuming it's in the same directory as the script)
+        # Path to YOLO model
         model_path = os.path.join(os.path.dirname(__file__), "best.pt")
+        if not os.path.exists(model_path):
+            st.error("YOLO model file 'best.pt' not found. Please upload it.")
+        else:
+            model = YOLO(model_path)
 
-        # Load the YOLO model
-        model = YOLO(model_path)
-
-        # Streamlit app title
         st.title("P&ID Instrumentation and Symbol Detection")
 
-        # File uploader for image input
-        uploaded_file = st.file_uploader("Upload an Image (PNG, JPG, JPEG)", type=["jpg", "jpeg", "png", "PNG"])
-
-        if uploaded_file is not None:
-            # Read the uploaded image
+        # Upload an image
+        uploaded_file = st.file_uploader("Upload an Image (PNG, JPG, JPEG)", type=["jpg", "jpeg", "png"])
+        if uploaded_file:
             file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
             img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
             original_img = img.copy()
 
-            # Display the uploaded image
+            # Display uploaded image
             st.subheader("Uploaded Image:")
-            st.image(img, channels="BGR")
+            st.image(img, channels="BGR", use_column_width=True)
 
-            # ONNX Symbol Detection (Using the YOLO model)
-            st.subheader("Symbol Detection with YOLO (best.pt)")
-
-            # Perform inference with the YOLO model
+            # YOLO Detection
+            st.subheader("Symbol Detection with YOLO")
             results = model(img)
+            for result in results:
+                boxes = result.boxes.data.cpu().numpy()  # Get bounding boxes
+                for box in boxes:
+                    x_min, y_min, x_max, y_max, conf, cls = box
+                    label = result.names[int(cls)]
+                    cv2.rectangle(img, (int(x_min), int(y_min)), (int(x_max), int(y_max)), (0, 255, 0), 2)
+                    st.write(f"Detected: {label} with confidence {conf:.2f}")
 
-            # Display the results
-            st.subheader("Detection Results:")
+            # Display annotated image
+            st.image(img, caption="YOLO Detection", use_column_width=True)
 
-            # Access bounding boxes, labels, and confidence scores
-            for *xyxy, conf, cls in results[0].boxes.data:  # Get bounding boxes and other info
-                label = model.names[int(cls)]
-                x_min, y_min, x_max, y_max = map(int, xyxy)  # Get bounding box coordinates
-                st.write(f"Detected: {label} with confidence {conf:.2f}")
-                cv2.rectangle(img, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-
-            # Display annotated image with YOLO results
-            st.image(img, caption="YOLO Annotated Image", use_column_width=True)
-
-            # EasyOCR Text Detection and Instrument Shapes
+            # Shape and text detection
             st.subheader("Text Extraction and Shape Detection")
 
             # Preprocessing for contours
@@ -111,58 +97,32 @@ elif authentication_status:
             dilated = cv2.dilate(edges, kernel, iterations=2)
             contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            # Detect and annotate instrument shapes
-            instrument_shapes = []
+            # Detect instrument shapes
             for contour in contours:
                 x, y, w, h = cv2.boundingRect(contour)
-                if 50 < w < 500 and 50 < h < 500:  # Adjust thresholds as needed
-                    instrument_shapes.append((x, y, w, h))
+                if 50 < w < 500 and 50 < h < 500:
                     cv2.rectangle(original_img, (x, y), (x + w, y + h), (255, 0, 0), 2)
 
-            # Detect circles using Hough Circle Transform
+            # Circle detection
             gray_blur = cv2.GaussianBlur(gray, (9, 9), 2)
             circles = cv2.HoughCircles(
-                gray_blur,
-                cv2.HOUGH_GRADIENT,
-                dp=1,
-                minDist=50,
-                param1=50,
-                param2=30,
-                minRadius=10,
-                maxRadius=50
+                gray_blur, cv2.HOUGH_GRADIENT, dp=1, minDist=50, param1=50, param2=30, minRadius=10, maxRadius=50
             )
-
-            # Draw circles on the original image
             if circles is not None:
                 circles = np.uint16(np.around(circles))
                 for circle in circles[0, :]:
-                    center = (circle[0], circle[1])  # x, y center
-                    radius = circle[2]  # radius
+                    center = (circle[0], circle[1])
+                    radius = circle[2]
                     cv2.circle(original_img, center, radius, (0, 255, 0), 2)
 
-            # Display detected shapes and text
-            st.subheader("Processed Image with Detected Shapes and Circles")
-            st.image(original_img, channels="BGR")
+            # Display processed image
+            st.image(original_img, caption="Detected Shapes and Circles", channels="BGR")
 
-            # Extract text from detected shapes
-            st.subheader("Extracted Text from Detected Shapes and Circles")
-            cols = st.columns(3)
-
-            for i, (x, y, w, h) in enumerate(instrument_shapes):
-                cropped_shape = img[y:y + h, x:x + w]
-                text = reader.readtext(cropped_shape, detail=0)
-                extracted_text = " ".join(text) if text else "No text detected"
-                with cols[i % 3]:
-                    st.image(cropped_shape, caption=f"Shape {i + 1}")
-                    st.write(f"Text: {extracted_text}")
-
-            if circles is not None:
-                for i, circle in enumerate(circles[0, :]):
-                    x, y, r = circle
-                    cropped_circle = original_img[y-r:y+r, x-r:x+r]
-                    if cropped_circle.size > 0:
-                        text = reader.readtext(cropped_circle, detail=0)
-                        extracted_text = " ".join(text) if text else "No text detected"
-                        with cols[(i + len(instrument_shapes)) % 3]:
-                            st.image(cropped_circle, caption=f"Circle {i + 1}")
-                            st.write(f"Text: {extracted_text}")
+            # Extract text
+            st.subheader("Extracted Text")
+            for contour in contours:
+                x, y, w, h = cv2.boundingRect(contour)
+                cropped = original_img[y:y+h, x:x+w]
+                text = reader.readtext(cropped, detail=0)
+                if text:
+                    st.write(f"Detected Text: {' '.join(text)}")

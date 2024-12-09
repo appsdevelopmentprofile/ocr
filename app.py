@@ -11,7 +11,7 @@ import streamlit_authenticator as stauth
 
 # --- Set page configuration ---
 st.set_page_config(
-    page_title="Corsarious",
+    page_title="corsarious",
     layout="wide",
     page_icon=" "
 )

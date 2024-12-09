@@ -1,6 +1,6 @@
 streamlit
 opencv-python==4.7.0.68
-numpy==1.21.5
+numpy==1.26.0
 Pillow
 easyocr
 ultralytics

@@ -13,28 +13,13 @@ st.set_page_config(
     page_icon="🧑‍⚕️"
 )
 
-# --- USER AUTHENTICATION ---
-names = ["corsarious"]
-usernames = ["corsarious"]
+# --- Main Application ---
+# Initialize EasyOCR reader
+reader = easyocr.Reader(['en'], verbose=True)
 
-# Removing validation process for proof of concept
-# --- Load and Display the Model ---
-def load_yolo_model(model_path):
-    try:
-        # Make sure to load the YOLO model correctly
-        model = YOLO(model_path)  # This should be a path to the .pt file
-        return model
-    except Exception as e:
-        st.error(f"Failed to load YOLO model at {model_path}: {str(e)}")
-        return None
-
-# Load the model
-model_path = "best.pt"  # Ensure the model path is correct
-model = load_yolo_model(model_path)
-
-# If model failed to load, show an error message
-if model is None:
-    st.stop()
+# Load the YOLO model
+model_path = "yolov5s.pt"  # Path to your downloaded YOLOv5 model
+model = YOLO(model_path)
 
 # Streamlit app title
 st.title("P&ID Instrumentation and Symbol Detection")
@@ -52,8 +37,8 @@ if uploaded_file is not None:
     st.subheader("Uploaded Image:")
     st.image(img, channels="BGR")
 
-    # ONNX Symbol Detection (Using the YOLO model)
-    st.subheader("Symbol Detection with YOLO (best.pt)")
+    # --- YOLO Symbol Detection ---
+    st.subheader("Symbol Detection with YOLOv5 (yolov5s.pt)")
 
     # Perform inference with the YOLO model
     results = model(img)
@@ -71,11 +56,8 @@ if uploaded_file is not None:
     # Display annotated image with YOLO results
     st.image(img, caption="YOLO Annotated Image", use_column_width=True)
 
-    # EasyOCR Text Detection and Instrument Shapes
+    # --- EasyOCR Text Detection and Shape Detection ---
     st.subheader("Text Extraction and Shape Detection")
-
-    # Initialize EasyOCR
-    reader = easyocr.Reader(['en'], verbose=True)
 
     # Preprocessing for contours
     gray = cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)
@@ -93,12 +75,33 @@ if uploaded_file is not None:
             instrument_shapes.append((x, y, w, h))
             cv2.rectangle(original_img, (x, y), (x + w, y + h), (255, 0, 0), 2)
 
+    # Detect circles using Hough Circle Transform
+    gray_blur = cv2.GaussianBlur(gray, (9, 9), 2)
+    circles = cv2.HoughCircles(
+        gray_blur,
+        cv2.HOUGH_GRADIENT,
+        dp=1,
+        minDist=50,
+        param1=50,
+        param2=30,
+        minRadius=10,
+        maxRadius=50
+    )
+
+    # Draw circles on the original image
+    if circles is not None:
+        circles = np.uint16(np.around(circles))
+        for circle in circles[0, :]:
+            center = (circle[0], circle[1])  # x, y center
+            radius = circle[2]  # radius
+            cv2.circle(original_img, center, radius, (0, 255, 0), 2)
+
     # Display detected shapes and text
-    st.subheader("Processed Image with Detected Shapes")
+    st.subheader("Processed Image with Detected Shapes and Circles")
     st.image(original_img, channels="BGR")
 
     # Extract text from detected shapes
-    st.subheader("Extracted Text from Detected Shapes")
+    st.subheader("Extracted Text from Detected Shapes and Circles")
     cols = st.columns(3)
 
     for i, (x, y, w, h) in enumerate(instrument_shapes):
@@ -108,3 +111,14 @@ if uploaded_file is not None:
         with cols[i % 3]:
             st.image(cropped_shape, caption=f"Shape {i + 1}")
             st.write(f"Text: {extracted_text}")
+
+    if circles is not None:
+        for i, circle in enumerate(circles[0, :]):
+            x, y, r = circle
+            cropped_circle = original_img[y-r:y+r, x-r:x+r]
+            if cropped_circle.size > 0:
+                text = reader.readtext(cropped_circle, detail=0)
+                extracted_text = " ".join(text) if text else "No text detected"
+                with cols[(i + len(instrument_shapes)) % 3]:
+                    st.image(cropped_circle, caption=f"Circle {i + 1}")
+                    st.write(f"Text: {extracted_text}")

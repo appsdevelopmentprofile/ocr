@@ -17,6 +17,9 @@ st.set_page_config(
     page_icon="🧑‍⚕️"
 )
 
+
+
+
 # --- USER AUTHENTICATION ---
 names = ["corsarious"]
 usernames = ["corsarious"]
@@ -31,11 +34,19 @@ except FileNotFoundError:
 except Exception as e:
     st.error(f"An error occurred while loading passwords: {e}")
 
+# Correctly initialize the authenticator
 authenticator = stauth.Authenticate(
-    names, usernames, hashed_passwords, "corsarious", "corsarious", cookie_expiry_days=30
+    names=names,
+    usernames=usernames,
+    password_hashes=hashed_passwords,  # Use `password_hashes` instead of `hashed_passwords` for consistency
+    cookie_name="corsarious",
+    cookie_expiry_days=30
 )
 
+# Login form and handling
 name, authentication_status, username = authenticator.login("Login", "main")
+
+
 
 # If the user clicks "Logout", update session to reflect the logout
 if "logged_out" not in st.session_state:

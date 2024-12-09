@@ -4,6 +4,5 @@ numpy
 Pillow
 easyocr
 ultralytics
-pickle5
 pathlib
 streamlit-authenticator

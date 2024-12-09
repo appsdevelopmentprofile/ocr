@@ -13,7 +13,7 @@ import streamlit_authenticator as stauth
 st.set_page_config(
     page_title="corsarious",
     layout="wide",
-    page_icon=" "
+    page_icon="🧑‍⚕️"
 )
 
 # --- USER AUTHENTICATION ---

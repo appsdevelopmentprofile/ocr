@@ -13,3 +13,4 @@ seaborn
 jupyterlab
 pytz
 requests
+opencv-python-headless

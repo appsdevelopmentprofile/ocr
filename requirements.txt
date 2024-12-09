@@ -1,8 +1,8 @@
 streamlit
 opencv-python==4.7.0.68
-numpy
+numpy==1.21.5
 Pillow
 easyocr
 ultralytics
 pathlib
-streamlit-authenticator
+streamlit-authenticator==0.1.5
